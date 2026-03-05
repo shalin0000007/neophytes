@@ -144,7 +144,12 @@ export async function scanRecentSms(
 
         // Process: savings only for debits, but record all transactions
         const result = await processTransaction(
-            userId, parsed.amount, parsed.merchant, smsDate, parsed.type
+            userId,
+            parsed.amount,
+            parsed.merchant, // merchant
+            parsed.merchant, // description
+            smsDate,         // smsDate
+            parsed.type      // txnType
         );
 
         if (!result.error) {

@@ -9,6 +9,13 @@
  */
 
 import { supabase } from './supabase';
+import { notifyTransactionCaptured, notifyInvestmentTriggered, notifySavingsMilestone } from './notificationService';
+
+export interface ProcessResult {
+    savedAmount: number;
+    invested: boolean;
+    error: string | null;
+}
 
 // ─── Round-Off Calculation ───
 
@@ -36,10 +43,11 @@ export function projectReturn(amount: number, years: number = 1): number {
 export async function processTransaction(
     userId: string,
     amount: number,
-    description: string = '',
-    txnDate?: Date,
+    merchant: string,
+    description: string = 'UPI Payment',
+    smsDate?: Date,
     txnType: 'debit' | 'credit' = 'debit'
-): Promise<{ savedAmount: number; invested: boolean; error: string | null }> {
+): Promise<ProcessResult> {
     // Only calculate savings for DEBIT transactions
     const savedAmount = txnType === 'debit' ? calculateSavings(amount) : 0;
 
@@ -50,9 +58,9 @@ export async function processTransaction(
         saved_amount: savedAmount,
         description: `${txnType === 'credit' ? '[CR] ' : ''}${description}`,
     };
-    // Use original SMS date if available
-    if (txnDate) {
-        insertData.created_at = txnDate.toISOString();
+    // Add timestamp if provided
+    if (smsDate) {
+        insertData.created_at = smsDate.toISOString();
     }
     const { error: txError } = await supabase.from('transactions').insert(insertData);
 
@@ -89,6 +97,18 @@ export async function processTransaction(
 
         // 3. Check for auto-investment (only for debits)
         const invested = await checkAndInvest(userId);
+
+        // 4. Fire notifications
+        if (savedAmount > 0) {
+            await notifyTransactionCaptured(merchant, savedAmount);
+
+            // Check milestone (every 1000 rupees based on updated profile)
+            const { data: newProfile } = await supabase.from('profiles').select('total_saved').eq('id', userId).single();
+            if (newProfile && newProfile.total_saved > 0 && newProfile.total_saved % 1000 < savedAmount) {
+                await notifySavingsMilestone(newProfile.total_saved);
+            }
+        }
+
         return { savedAmount, invested, error: null };
     }
 
@@ -126,6 +146,9 @@ export async function checkAndInvest(userId: string): Promise<boolean> {
             total_invested: (profile.total_invested || 0) + investAmount,
         })
         .eq('id', userId);
+
+    // Trigger notification
+    await notifyInvestmentTriggered();
 
     return true;
 }

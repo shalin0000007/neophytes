@@ -14,6 +14,7 @@ import 'react-native-reanimated';
 
 import { ThemeProvider, useTheme } from '@/src/theme/ThemeContext';
 import { AuthProvider, useAuth } from '@/src/services/AuthContext';
+import { requestNotificationPermissions } from '@/src/services/notificationService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -66,6 +67,9 @@ function RootLayoutNav() {
       router.replace('/auth/login');
     } else if (session && inAuthGroup) {
       router.replace('/(tabs)');
+      requestNotificationPermissions();
+    } else if (session && !inAuthGroup) {
+      requestNotificationPermissions();
     }
   }, [session, initialized, segments]);
 
