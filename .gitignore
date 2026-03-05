@@ -20,6 +20,12 @@ web-build/
 
 # Temp files
 .tmp/
+.tmp*/
+*.zip
+
+# Backup / Copy directories
+*- Copy/
+*- Copy
 
 # OS files
 .DS_Store
@@ -29,3 +35,11 @@ Thumbs.db
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+
+# UI reference images (not needed in repo)
+UI_images/
+
+# Misc
+1/
+execution/
+directives/
