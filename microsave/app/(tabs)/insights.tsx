@@ -1,0 +1,290 @@
+/**
+ * Insights Screen
+ * 
+ * UI Reference: Spending analysis card with donut chart,
+ * category breakdown (Food, Entertainment, Transport, Other),
+ * and AI Suggestions cards with colored borders.
+ */
+
+import React, { useEffect, useState, useCallback } from 'react';
+import {
+    View,
+    Text,
+    StyleSheet,
+    ScrollView,
+    RefreshControl,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import Svg, { Circle } from 'react-native-svg';
+
+import { useTheme } from '@/src/theme/ThemeContext';
+import { useAuth } from '@/src/services/AuthContext';
+import { getProfile, getRecentTransactions } from '@/src/services/savingsEngine';
+import { FontSize, FontWeight, Spacing, BorderRadius } from '@/src/theme';
+
+// Simple donut chart component
+function DonutChart({ value, max, size = 120 }: { value: number; max: number; size?: number }) {
+    const strokeWidth = 12;
+    const radius = (size - strokeWidth) / 2;
+    const circumference = 2 * Math.PI * radius;
+    const progress = max > 0 ? Math.min(value / max, 1) : 0;
+
+    // Multi-color segments
+    const segments = [
+        { color: '#FF3CAC', percent: 0.35 },
+        { color: '#8A4FFF', percent: 0.30 },
+        { color: '#00D4FF', percent: 0.20 },
+        { color: '#6C63FF', percent: 0.15 },
+    ];
+
+    let offset = 0;
+    return (
+        <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+            <Svg width={size} height={size} style={{ transform: [{ rotate: '-90deg' }] }}>
+                <Circle
+                    cx={size / 2}
+                    cy={size / 2}
+                    r={radius}
+                    stroke="rgba(138,79,255,0.1)"
+                    strokeWidth={strokeWidth}
+                    fill="none"
+                />
+                {segments.map((seg, i) => {
+                    const segLength = circumference * seg.percent * progress;
+                    const segOffset = circumference - offset;
+                    offset += segLength;
+                    return (
+                        <Circle
+                            key={i}
+                            cx={size / 2}
+                            cy={size / 2}
+                            r={radius}
+                            stroke={seg.color}
+                            strokeWidth={strokeWidth}
+                            strokeDasharray={`${segLength} ${circumference - segLength}`}
+                            strokeDashoffset={segOffset}
+                            strokeLinecap="round"
+                            fill="none"
+                        />
+                    );
+                })}
+            </Svg>
+            <View style={{ position: 'absolute', alignItems: 'center' }}>
+                <Ionicons name="pie-chart-outline" size={22} color="#FFFFFF" />
+            </View>
+        </View>
+    );
+}
+
+// AI Suggestion card
+function SuggestionCard({
+    icon,
+    iconBg,
+    borderColor,
+    title,
+    description,
+    colors,
+}: {
+    icon: string;
+    iconBg: string;
+    borderColor: string;
+    title: string;
+    description: string;
+    colors: any;
+}) {
+    return (
+        <View style={[styles.suggestionCard, { backgroundColor: colors.surface, borderColor }]}>
+            <View style={[styles.suggestionIcon, { backgroundColor: iconBg }]}>
+                <Text style={{ fontSize: 22 }}>{icon}</Text>
+            </View>
+            <View style={styles.suggestionContent}>
+                <Text style={[styles.suggestionTitle, { color: colors.textPrimary }]}>{title}</Text>
+                <Text style={[styles.suggestionDesc, { color: colors.textSecondary }]}>{description}</Text>
+            </View>
+        </View>
+    );
+}
+
+export default function InsightsScreen() {
+    const { colors } = useTheme();
+    const { user } = useAuth();
+    const [totalSpent, setTotalSpent] = useState(0);
+    const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+
+    const fetchData = useCallback(async () => {
+        if (!user) return;
+        const profileRes = await getProfile(user.id);
+        const p = profileRes.profile as any;
+        setTotalSpent(p?.total_spent || 0);
+        setLoading(false);
+    }, [user]);
+
+    useEffect(() => { fetchData(); }, [fetchData]);
+    const onRefresh = async () => { setRefreshing(true); await fetchData(); setRefreshing(false); };
+
+    const categories = [
+        { label: 'Food', color: '#FF3CAC' },
+        { label: 'Enter', color: '#8A4FFF' },
+        { label: 'Trans', color: '#00D4FF' },
+        { label: 'Other', color: '#6C63FF' },
+    ];
+
+    const suggestions = [
+        {
+            icon: '💡',
+            iconBg: 'rgba(138,79,255,0.2)',
+            borderColor: colors.primary,
+            title: 'Reduce Takeout',
+            description: 'You spent ₹850 on food deliveries this week. Cook to save ₹400.',
+        },
+        {
+            icon: '🐷',
+            iconBg: 'rgba(0,212,255,0.2)',
+            borderColor: colors.cyan,
+            title: 'Boost Weekend Savings',
+            description: 'Add ₹100 to your vault this weekend to reach your monthly goal.',
+        },
+        {
+            icon: '📈',
+            iconBg: 'rgba(255,60,172,0.15)',
+            borderColor: colors.magenta,
+            title: 'Subscription Alert',
+            description: 'You have 3 inactive subscriptions costing ₹250/mo. Review them now.',
+        },
+    ];
+
+    return (
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <Text style={[styles.screenTitle, { color: colors.textPrimary }]}>Insights</Text>
+
+            <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.scrollContent}
+                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+            >
+                {/* Spending Analysis Card */}
+                <View style={[styles.analysisCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+                    <View style={styles.analysisTop}>
+                        <View>
+                            <Text style={[styles.analysisLabel, { color: colors.textSecondary }]}>SPENDING ANALYSIS</Text>
+                            <Text style={[styles.analysisAmount, { color: colors.primary }]}>
+                                ₹{totalSpent.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </Text>
+                            <View style={styles.trendRow}>
+                                <Text style={[styles.trendText, { color: colors.textSecondary }]}>This Month </Text>
+                                <View style={[styles.trendBadge, { backgroundColor: 'rgba(0,227,140,0.15)' }]}>
+                                    <Ionicons name="trending-down" size={12} color="#00E38C" />
+                                    <Text style={styles.trendValue}> 15%</Text>
+                                </View>
+                            </View>
+                        </View>
+                        <DonutChart value={totalSpent} max={5000} />
+                    </View>
+
+                    {/* Category Legend */}
+                    <View style={styles.categoryGrid}>
+                        {categories.map((cat, i) => (
+                            <View key={i} style={styles.categoryItem}>
+                                <View style={[styles.categoryDot, { backgroundColor: cat.color }]} />
+                                <Text style={[styles.categoryLabel, { color: colors.textSecondary }]}>{cat.label}</Text>
+                            </View>
+                        ))}
+                    </View>
+                </View>
+
+                {/* AI Suggestions */}
+                <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>AI Suggestions</Text>
+                {suggestions.map((s, i) => (
+                    <SuggestionCard key={i} {...s} colors={colors} />
+                ))}
+            </ScrollView>
+        </SafeAreaView>
+    );
+}
+
+const styles = StyleSheet.create({
+    container: { flex: 1 },
+    screenTitle: {
+        fontSize: FontSize.xl,
+        fontWeight: FontWeight.bold,
+        textAlign: 'center',
+        paddingVertical: Spacing.md,
+    },
+    scrollContent: { padding: Spacing.lg, paddingBottom: 100 },
+
+    // Analysis Card
+    analysisCard: {
+        borderRadius: BorderRadius.xxl,
+        borderWidth: 1,
+        padding: Spacing.lg,
+        marginBottom: Spacing.xl,
+    },
+    analysisTop: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        marginBottom: Spacing.lg,
+    },
+    analysisLabel: {
+        fontSize: FontSize.xs,
+        fontWeight: FontWeight.bold,
+        letterSpacing: 1,
+        marginBottom: Spacing.xs,
+    },
+    analysisAmount: {
+        fontSize: FontSize.xxl,
+        fontWeight: FontWeight.heavy,
+        marginBottom: Spacing.xs,
+    },
+    trendRow: { flexDirection: 'row', alignItems: 'center' },
+    trendText: { fontSize: FontSize.sm },
+    trendBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 8,
+    },
+    trendValue: { fontSize: FontSize.xs, color: '#00E38C', fontWeight: FontWeight.bold },
+
+    // Categories
+    categoryGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: Spacing.md,
+    },
+    categoryItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        width: '45%',
+        paddingVertical: Spacing.xs,
+    },
+    categoryDot: { width: 8, height: 8, borderRadius: 4, marginRight: Spacing.sm },
+    categoryLabel: { fontSize: FontSize.sm },
+
+    // Section
+    sectionTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, marginBottom: Spacing.md },
+
+    // Suggestions
+    suggestionCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        borderRadius: BorderRadius.xl,
+        borderWidth: 1,
+        padding: Spacing.md,
+        marginBottom: Spacing.md,
+    },
+    suggestionIcon: {
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: Spacing.md,
+    },
+    suggestionContent: { flex: 1 },
+    suggestionTitle: { fontSize: FontSize.md, fontWeight: FontWeight.bold, marginBottom: 4 },
+    suggestionDesc: { fontSize: FontSize.sm, lineHeight: 20 },
+});
