@@ -141,12 +141,49 @@ export default function DashboardScreen() {
     }, [user]);
 
     // Quick action handlers
+    const openUPIAppPicker = async () => {
+        const upiApps = [
+            { name: 'PhonePe', url: 'phonepe://pay' },
+            { name: 'Google Pay', url: 'tez://upi/pay' },
+            { name: 'Paytm', url: 'paytmmp://pay' },
+        ];
+
+        // Find which apps are installed
+        const available: { name: string; url: string }[] = [];
+        for (const app of upiApps) {
+            try {
+                const can = await Linking.canOpenURL(app.url);
+                if (can) available.push(app);
+            } catch { /* ignore */ }
+        }
+
+        if (available.length === 0) {
+            Alert.alert('No UPI App Found', 'Please install PhonePe, Google Pay, or Paytm to make payments.');
+            return;
+        }
+
+        if (available.length === 1) {
+            Linking.openURL(available[0].url);
+            return;
+        }
+
+        Alert.alert(
+            'Pay with',
+            'Select a UPI app to open',
+            [
+                ...available.map(app => ({
+                    text: app.name,
+                    onPress: () => Linking.openURL(app.url),
+                })),
+                { text: 'Cancel', style: 'cancel' as const },
+            ]
+        );
+    };
+
     const handleQuickAction = (label: string) => {
         switch (label) {
             case 'Send':
-                Linking.openURL('upi://pay').catch(() => {
-                    Alert.alert('No UPI App', 'No UPI payment app found on this device.');
-                });
+                openUPIAppPicker();
                 break;
             case 'Receive':
                 router.push('/receive');

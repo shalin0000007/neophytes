@@ -24,19 +24,16 @@ import { getProfile, getRecentTransactions } from '@/src/services/savingsEngine'
 import { FontSize, FontWeight, Spacing, BorderRadius } from '@/src/theme';
 
 // Simple donut chart component
-function DonutChart({ value, max, size = 120 }: { value: number; max: number; size?: number }) {
+function DonutChart({ value, max, categories = [], size = 120 }: { value: number; max: number; categories?: any[]; size?: number }) {
     const strokeWidth = 12;
     const radius = (size - strokeWidth) / 2;
     const circumference = 2 * Math.PI * radius;
     const progress = max > 0 ? Math.min(value / max, 1) : 0;
 
-    // Multi-color segments
-    const segments = [
-        { color: '#FF3CAC', percent: 0.35 },
-        { color: '#8A4FFF', percent: 0.30 },
-        { color: '#00D4FF', percent: 0.20 },
-        { color: '#6C63FF', percent: 0.15 },
-    ];
+    // Use dynamic categories mapped to segments with minimum visual representation
+    const segments = value > 0 && categories.length > 0
+        ? categories.map(c => ({ color: c.color, percent: Math.max(c.percent, 0.05) }))
+        : [{ color: '#7A8B99', percent: 1 }];
 
     let offset = 0;
     return (
@@ -106,54 +103,147 @@ function SuggestionCard({
     );
 }
 
+const CATEGORY_COLORS: Record<string, string> = {
+    'Food & Dining': '#FF3CAC',
+    'Shopping': '#8A4FFF',
+    'Transport': '#00D4FF',
+    'Entertainment': '#6C63FF',
+    'Other': '#7A8B99',
+};
+
+function categorizeTransaction(merchant: string, description: string): string {
+    const text = (merchant + ' ' + description).toLowerCase();
+    if (text.match(/zomato|swiggy|uber eats|mcdonalds|starbucks|cafe|restaurant|food|burger|pizza|chai/)) return 'Food & Dining';
+    if (text.match(/amazon|flipkart|myntra|ajio|zara|h&m|mall|store|supermarket/)) return 'Shopping';
+    if (text.match(/uber|ola|rapido|metro|irctc|fuel|petrol/)) return 'Transport';
+    if (text.match(/netflix|prime|spotify|bookmyshow|pvr|cinema/)) return 'Entertainment';
+    return 'Other';
+}
+
+function generateSuggestions(transactions: any[], colors: any) {
+    const suggestions = [];
+    // Suggestion 1: Food spending
+    const foodSpent = transactions.filter(t => categorizeTransaction(t.merchant || '', t.description || '') === 'Food & Dining').reduce((sum, t) => sum + t.amount, 0);
+    if (foodSpent > 500) {
+        suggestions.push({
+            icon: '🍔',
+            iconBg: 'rgba(255,60,172,0.15)',
+            borderColor: colors.primary,
+            title: 'High Food Expenses',
+            description: `You spent ₹${foodSpent} on food recently. Try cooking to save extra!`,
+        });
+    }
+
+    // Suggestion 2: Recent Savings
+    const savedThisWeek = transactions.reduce((sum, t) => sum + (t.saved_amount || 0), 0);
+    if (savedThisWeek > 0) {
+        suggestions.push({
+            icon: '🐷',
+            iconBg: 'rgba(0,212,255,0.2)',
+            borderColor: colors.cyan,
+            title: 'Great Savings Streak',
+            description: `You've auto-saved ₹${savedThisWeek.toFixed(2)} recently. Keep it up!`,
+        });
+    } else {
+        suggestions.push({
+            icon: '💡',
+            iconBg: 'rgba(138,79,255,0.2)',
+            borderColor: colors.primary,
+            title: 'Start Auto-Saving',
+            description: 'Make some UPI payments to start auto-saving your spare change!',
+        });
+    }
+
+    // Suggestion 3: Top merchant
+    const merchants: Record<string, number> = {};
+    transactions.forEach(t => { if (t.merchant) merchants[t.merchant] = (merchants[t.merchant] || 0) + t.amount; });
+    const topMerchant = Object.entries(merchants).sort((a, b) => b[1] - a[1])[0];
+    if (topMerchant && topMerchant[1] > 1000) {
+        suggestions.push({
+            icon: '📈',
+            iconBg: 'rgba(108,99,255,0.2)',
+            borderColor: colors.magenta,
+            title: 'Top Spending Alert',
+            description: `You spent ₹${topMerchant[1]} at ${topMerchant[0]} recently.`,
+        });
+    }
+
+    if (suggestions.length < 3) {
+        suggestions.push({
+            icon: '🚀',
+            iconBg: 'rgba(0,227,140,0.2)',
+            borderColor: '#00E38C',
+            title: 'You are on track!',
+            description: 'Your spending is looking good right now. Fantastic job managing your budget!',
+        });
+    }
+
+    return suggestions.slice(0, 3);
+}
+
 export default function InsightsScreen() {
     const { colors } = useTheme();
     const { user } = useAuth();
     const [totalSpent, setTotalSpent] = useState(0);
+    const [categories, setCategories] = useState<{ label: string, color: string, percent: number }[]>([]);
+    const [suggestions, setSuggestions] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
 
     const fetchData = useCallback(async () => {
         if (!user) return;
-        const profileRes = await getProfile(user.id);
-        const p = profileRes.profile as any;
-        setTotalSpent(p?.total_spent || 0);
-        setLoading(false);
-    }, [user]);
+        try {
+            const profileRes = await getProfile(user.id);
+            const p = profileRes.profile as any;
+            setTotalSpent(p?.total_spent || 0);
+
+            const { transactions, error } = await getRecentTransactions(user.id, 100);
+            if (error) {
+                console.error("Insights fetch error:", error);
+                return;
+            }
+
+            // Calculate categories
+            const catTotals: Record<string, number> = {};
+            let sum = 0;
+            transactions.forEach(t => {
+                const amt = t.amount || 0;
+                if (amt > 0 && !(t.description && t.description.indexOf('[CR]') !== -1)) {
+                    const cat = categorizeTransaction(t.merchant || '', t.description || '');
+                    catTotals[cat] = (catTotals[cat] || 0) + amt;
+                    sum += amt;
+                }
+            });
+
+            const sortedCats = Object.entries(catTotals)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 4)
+                .map(([label, amount]) => ({
+                    label,
+                    color: CATEGORY_COLORS[label] || '#7A8B99',
+                    percent: sum > 0 ? amount / sum : 0
+                }));
+
+            setCategories(sortedCats);
+            setSuggestions(generateSuggestions(transactions, colors));
+
+        } catch (e) {
+            console.error("Insights fetch exception:", e);
+        } finally {
+            setLoading(false);
+        }
+    }, [user, colors]);
 
     useEffect(() => { fetchData(); }, [fetchData]);
     const onRefresh = async () => { setRefreshing(true); await fetchData(); setRefreshing(false); };
 
-    const categories = [
-        { label: 'Food', color: '#FF3CAC' },
-        { label: 'Enter', color: '#8A4FFF' },
-        { label: 'Trans', color: '#00D4FF' },
-        { label: 'Other', color: '#6C63FF' },
-    ];
-
-    const suggestions = [
-        {
-            icon: '💡',
-            iconBg: 'rgba(138,79,255,0.2)',
-            borderColor: colors.primary,
-            title: 'Reduce Takeout',
-            description: 'You spent ₹850 on food deliveries this week. Cook to save ₹400.',
-        },
-        {
-            icon: '🐷',
-            iconBg: 'rgba(0,212,255,0.2)',
-            borderColor: colors.cyan,
-            title: 'Boost Weekend Savings',
-            description: 'Add ₹100 to your vault this weekend to reach your monthly goal.',
-        },
-        {
-            icon: '📈',
-            iconBg: 'rgba(255,60,172,0.15)',
-            borderColor: colors.magenta,
-            title: 'Subscription Alert',
-            description: 'You have 3 inactive subscriptions costing ₹250/mo. Review them now.',
-        },
-    ];
+    if (loading) {
+        return (
+            <SafeAreaView style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
+                <Text style={{ color: colors.textPrimary }}>Loading Insights...</Text>
+            </SafeAreaView>
+        );
+    }
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -180,7 +270,7 @@ export default function InsightsScreen() {
                                 </View>
                             </View>
                         </View>
-                        <DonutChart value={totalSpent} max={5000} />
+                        <DonutChart value={totalSpent} max={Math.max(totalSpent, 1000)} categories={categories} />
                     </View>
 
                     {/* Category Legend */}

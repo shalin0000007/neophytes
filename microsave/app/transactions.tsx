@@ -84,12 +84,16 @@ export default function TransactionHistoryScreen() {
                     </Text>
                 </View>
                 <View style={styles.txnAmounts}>
-                    <Text style={[styles.txnAmount, { color: colors.textPrimary }]}>
-                        -₹{item.amount.toFixed(2)}
+                    <Text style={[styles.txnAmount, {
+                        color: item.description?.startsWith('[CR]') ? colors.success : colors.textPrimary
+                    }]}>
+                        {item.description?.startsWith('[CR]') ? '+' : '-'}₹{item.amount.toFixed(2)}
                     </Text>
-                    <Text style={[styles.txnSaved, { color: colors.success }]}>
-                        +₹{savings.toFixed(2)} saved
-                    </Text>
+                    {!item.description?.startsWith('[CR]') && (
+                        <Text style={[styles.txnSaved, { color: colors.success }]}>
+                            +₹{savings.toFixed(2)} saved
+                        </Text>
+                    )}
                 </View>
             </View>
         );
@@ -118,7 +122,7 @@ export default function TransactionHistoryScreen() {
                 <View style={styles.summaryItem}>
                     <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Total Spent</Text>
                     <Text style={[styles.summaryValue, { color: colors.textPrimary }]}>
-                        ₹{transactions.reduce((s, t) => s + t.amount, 0).toLocaleString('en-IN')}
+                        ₹{transactions.filter(t => !t.description?.startsWith('[CR]')).reduce((s, t) => s + t.amount, 0).toLocaleString('en-IN')}
                     </Text>
                 </View>
                 <View style={[styles.summaryDivider, { backgroundColor: colors.cardBorder }]} />

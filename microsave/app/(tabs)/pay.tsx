@@ -1,12 +1,11 @@
 /**
  * Pay Screen (Center Tab)
  * 
- * This screen is linked to the center "+" button.
- * When opened, it immediately tries to open a UPI payment app.
- * Also shows a manual trigger button as fallback.
+ * Shows UPI app buttons for PhonePe, Google Pay, Paytm.
+ * MicroSave automatically detects the payment via SMS.
  */
 
-import React, { useEffect } from 'react';
+import React from 'react';
 import {
     View,
     Text,
@@ -14,6 +13,7 @@ import {
     TouchableOpacity,
     Linking,
     Alert,
+    Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,36 +22,25 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { FontSize, FontWeight, Spacing, BorderRadius } from '@/src/theme';
 
-async function openUPIApp() {
-    const upiUrl = 'upi://pay';
+const UPI_APPS = [
+    { name: 'PhonePe', emoji: '💜', url: 'phonepe://pay', color: '#5F259F' },
+    { name: 'Google Pay', emoji: '🔵', url: 'tez://upi/pay', color: '#4285F4' },
+    { name: 'Paytm', emoji: '🔷', url: 'paytmmp://pay', color: '#002970' },
+];
+
+const openApp = async (name: string, url: string) => {
     try {
-        const canOpen = await Linking.canOpenURL(upiUrl);
-        if (canOpen) {
-            await Linking.openURL(upiUrl);
-            return;
-        }
-        const apps = [
-            { name: 'Google Pay', url: 'tez://upi/pay' },
-            { name: 'PhonePe', url: 'phonepe://upi' },
-            { name: 'Paytm', url: 'paytmmp://upi' },
-        ];
-        for (const app of apps) {
-            const can = await Linking.canOpenURL(app.url);
-            if (can) { await Linking.openURL(app.url); return; }
-        }
-        Alert.alert('No UPI App Found', 'Please install a UPI payment app like Google Pay, PhonePe, or Paytm.');
-    } catch (error) {
-        Alert.alert('Error', 'Could not open payment app');
+        await Linking.openURL(url);
+    } catch (e) {
+        Alert.alert(
+            `${name} not found`,
+            `${name} does not appear to be installed on this device.`
+        );
     }
-}
+};
 
 export default function PayScreen() {
     const { colors } = useTheme();
-
-    useEffect(() => {
-        // Auto-open UPI when this screen is focused
-        openUPIApp();
-    }, []);
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -65,15 +54,26 @@ export default function PayScreen() {
                     MicroSave will auto-detect and round up your savings!
                 </Text>
 
-                <TouchableOpacity onPress={openUPIApp} activeOpacity={0.8}>
-                    <LinearGradient
-                        colors={['#8A4FFF', '#6C63FF']}
-                        style={styles.payButton}
-                    >
-                        <Ionicons name="open-outline" size={22} color="#FFFFFF" style={{ marginRight: Spacing.sm }} />
-                        <Text style={styles.payButtonText}>Open UPI App</Text>
-                    </LinearGradient>
-                </TouchableOpacity>
+                <View style={styles.appsRow}>
+                    {UPI_APPS.map(app => (
+                        <TouchableOpacity
+                            key={app.name}
+                            style={[styles.appBtn, { backgroundColor: app.color }]}
+                            onPress={() => openApp(app.name, app.url)}
+                            activeOpacity={0.8}
+                        >
+                            <Text style={styles.appEmoji}>{app.emoji}</Text>
+                            <Text style={styles.appName}>{app.name}</Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+
+                <View style={[styles.infoCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+                    <Ionicons name="information-circle-outline" size={18} color={colors.textSecondary} />
+                    <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+                        After you pay, MicroSave reads the bank SMS and saves your spare change automatically.
+                    </Text>
+                </View>
             </View>
         </SafeAreaView>
     );
@@ -81,24 +81,62 @@ export default function PayScreen() {
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
-    content: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: Spacing.lg },
+    content: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: Spacing.lg,
+    },
     iconCircle: {
-        width: 96,
-        height: 96,
-        borderRadius: 48,
+        width: 90,
+        height: 90,
+        borderRadius: 45,
         justifyContent: 'center',
         alignItems: 'center',
         marginBottom: Spacing.lg,
     },
-    title: { fontSize: FontSize.xxl, fontWeight: FontWeight.bold, marginBottom: Spacing.sm },
-    subtitle: { fontSize: FontSize.md, textAlign: 'center', lineHeight: 22, marginBottom: Spacing.xl },
-    payButton: {
-        flexDirection: 'row',
-        height: 56,
-        paddingHorizontal: Spacing.xl,
-        borderRadius: BorderRadius.lg,
-        justifyContent: 'center',
-        alignItems: 'center',
+    title: {
+        fontSize: FontSize.xxl,
+        fontWeight: FontWeight.bold,
+        marginBottom: Spacing.sm,
     },
-    payButtonText: { color: '#FFFFFF', fontSize: FontSize.lg, fontWeight: FontWeight.bold },
+    subtitle: {
+        fontSize: FontSize.md,
+        textAlign: 'center',
+        lineHeight: 22,
+        marginBottom: Spacing.xl,
+    },
+    appsRow: {
+        flexDirection: 'row',
+        gap: Spacing.md,
+        marginBottom: Spacing.xl,
+    },
+    appBtn: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: 96,
+        height: 96,
+        borderRadius: BorderRadius.xl,
+        gap: 6,
+    },
+    appEmoji: { fontSize: 30 },
+    appName: {
+        color: '#fff',
+        fontSize: FontSize.xs,
+        fontWeight: FontWeight.bold,
+    },
+    infoCard: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: Spacing.sm,
+        padding: Spacing.md,
+        borderRadius: BorderRadius.lg,
+        borderWidth: 1,
+        marginHorizontal: Spacing.sm,
+    },
+    infoText: {
+        flex: 1,
+        fontSize: FontSize.sm,
+        lineHeight: 20,
+    },
 });
