@@ -61,8 +61,10 @@ export default function SignupScreen() {
             <View style={styles.content}>
                 {/* Header */}
                 <View style={styles.header}>
-                    <Text style={[styles.logoText, { color: colors.primary }]}>₹</Text>
-                    <Text style={[styles.title, { color: colors.textPrimary }]}>Create Account</Text>
+                    <View style={[styles.logoContainer, { backgroundColor: colors.surface }]}>
+                        <Text style={styles.logoEmoji}>🐷</Text>
+                    </View>
+                    <Text style={[styles.title, { color: colors.textPrimary }]}>MicroSave</Text>
                     <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
                         Start your micro-saving journey
                     </Text>
@@ -114,7 +116,7 @@ export default function SignupScreen() {
                         activeOpacity={0.8}
                     >
                         {loading ? (
-                            <ActivityIndicator color="#000" />
+                            <ActivityIndicator color="#FFFFFF" />
                         ) : (
                             <Text style={styles.buttonText}>Create Account</Text>
                         )}
@@ -149,15 +151,19 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         marginBottom: Spacing.xxl,
     },
-    logoText: {
-        fontSize: 64,
-        fontWeight: FontWeight.heavy,
-        marginBottom: Spacing.sm,
+    logoContainer: {
+        width: 72,
+        height: 72,
+        borderRadius: 20,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: Spacing.md,
     },
+    logoEmoji: { fontSize: 36 },
     title: {
         fontSize: FontSize.xxl,
         fontWeight: FontWeight.bold,
-        letterSpacing: -0.5,
+        letterSpacing: 1,
     },
     subtitle: {
         fontSize: FontSize.md,
@@ -193,7 +199,7 @@ const styles = StyleSheet.create({
         height: 52,
     },
     buttonText: {
-        color: '#000',
+        color: '#FFFFFF',
         fontSize: FontSize.lg,
         fontWeight: FontWeight.bold,
     },
