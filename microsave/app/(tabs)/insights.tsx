@@ -1,12 +1,4 @@
-/**
- * Insights Screen
- * 
- * UI Reference: Spending analysis card with donut chart,
- * category breakdown (Food, Entertainment, Transport, Other),
- * and AI Suggestions cards with colored borders.
- */
-
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
     View,
     Text,
@@ -23,14 +15,31 @@ import { useAuth } from '@/src/services/AuthContext';
 import { getProfile, getRecentTransactions } from '@/src/services/savingsEngine';
 import { FontSize, FontWeight, Spacing, BorderRadius } from '@/src/theme';
 
-// Simple donut chart component
+// Animated donut chart — sweeps from empty to filled on load
 function DonutChart({ value, max, categories = [], size = 120 }: { value: number; max: number; categories?: any[]; size?: number }) {
     const strokeWidth = 12;
     const radius = (size - strokeWidth) / 2;
     const circumference = 2 * Math.PI * radius;
     const progress = max > 0 ? Math.min(value / max, 1) : 0;
+    const [animProgress, setAnimProgress] = useState(0);
+    const startTime = useRef(0);
 
-    // Use dynamic categories mapped to segments with minimum visual representation
+    useEffect(() => {
+        setAnimProgress(0);
+        startTime.current = Date.now();
+        const duration = 1200;
+
+        const animate = () => {
+            const elapsed = Date.now() - startTime.current;
+            const t = Math.min(elapsed / duration, 1);
+            // Ease out cubic
+            const eased = 1 - Math.pow(1 - t, 3);
+            setAnimProgress(eased);
+            if (t < 1) requestAnimationFrame(animate);
+        };
+        requestAnimationFrame(animate);
+    }, [value, max]);
+
     const segments = value > 0 && categories.length > 0
         ? categories.map(c => ({ color: c.color, percent: Math.max(c.percent, 0.05) }))
         : [{ color: '#7A8B99', percent: 1 }];
@@ -48,7 +57,7 @@ function DonutChart({ value, max, categories = [], size = 120 }: { value: number
                     fill="none"
                 />
                 {segments.map((seg, i) => {
-                    const segLength = circumference * seg.percent * progress;
+                    const segLength = circumference * seg.percent * progress * animProgress;
                     const segOffset = circumference - offset;
                     offset += segLength;
                     return (
@@ -189,6 +198,22 @@ export default function InsightsScreen() {
     const [suggestions, setSuggestions] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const [displaySpent, setDisplaySpent] = useState(0);
+
+    // Animated count-up
+    useEffect(() => {
+        if (totalSpent <= 0) { setDisplaySpent(0); return; }
+        const duration = 1200;
+        const startVal = displaySpent;
+        const startTime = Date.now();
+        const tick = () => {
+            const t = Math.min((Date.now() - startTime) / duration, 1);
+            const eased = 1 - Math.pow(1 - t, 3);
+            setDisplaySpent(Math.round((startVal + (totalSpent - startVal) * eased) * 100) / 100);
+            if (t < 1) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+    }, [totalSpent]);
 
     const fetchData = useCallback(async () => {
         if (!user) return;
@@ -260,7 +285,7 @@ export default function InsightsScreen() {
                         <View>
                             <Text style={[styles.analysisLabel, { color: colors.textSecondary }]}>SPENDING ANALYSIS</Text>
                             <Text style={[styles.analysisAmount, { color: colors.primary }]}>
-                                ₹{totalSpent.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                ₹{displaySpent.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </Text>
                             <View style={styles.trendRow}>
                                 <Text style={[styles.trendText, { color: colors.textSecondary }]}>This Month </Text>

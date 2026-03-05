@@ -1,58 +1,23 @@
 /**
  * Bottom Tabs Layout
  * 
- * 4 tabs + centered raised "+" button that opens UPI payment.
+ * 4 tabs + centered raised "+" button that navigates to Pay screen.
  * Home | Insights | [+] | Vault | Profile
+ * 
+ * Includes smooth fade transition for tab switches.
  */
 
 import { Tabs } from 'expo-router';
-import { View, TouchableOpacity, StyleSheet, Linking, Alert, Platform } from 'react-native';
+import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '@/src/theme/ThemeContext';
-
-// Open UPI payment intent
-async function openUPIApp() {
-    // Try to open UPI intent (works on Android with GPay, PhonePe, Paytm, etc.)
-    const upiUrl = 'upi://pay';
-
-    try {
-        const canOpen = await Linking.canOpenURL(upiUrl);
-        if (canOpen) {
-            await Linking.openURL(upiUrl);
-        } else {
-            // Fallback: try specific apps
-            const apps = [
-                { name: 'Google Pay', url: 'tez://upi/pay' },
-                { name: 'PhonePe', url: 'phonepe://upi' },
-                { name: 'Paytm', url: 'paytmmp://upi' },
-            ];
-
-            for (const app of apps) {
-                const can = await Linking.canOpenURL(app.url);
-                if (can) {
-                    await Linking.openURL(app.url);
-                    return;
-                }
-            }
-
-            Alert.alert(
-                'No UPI App Found',
-                'Please install a UPI payment app like Google Pay, PhonePe, or Paytm.',
-                [{ text: 'OK' }]
-            );
-        }
-    } catch (error) {
-        Alert.alert('Error', 'Could not open payment app');
-    }
-}
 
 // Custom center button component
 function CenterPayButton() {
     return (
         <TouchableOpacity
             style={styles.centerButton}
-            onPress={openUPIApp}
             activeOpacity={0.8}
         >
             <LinearGradient
@@ -86,6 +51,7 @@ export default function TabsLayout() {
                     fontSize: 11,
                     fontWeight: '600',
                 },
+                animation: 'fade',
             }}
         >
             <Tabs.Screen

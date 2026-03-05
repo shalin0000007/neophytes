@@ -29,6 +29,7 @@ import { useAuth } from '@/src/services/AuthContext';
 import { signOut } from '@/src/services/supabase';
 import { getProfile } from '@/src/services/savingsEngine';
 import { getSavedAvatarId, getSavedDisplayName, getAvatarById } from '@/src/services/avatarService';
+import { supabase } from '@/src/services/supabase';
 import { FontSize, FontWeight, Spacing, BorderRadius } from '@/src/theme';
 
 // ─── Settings Row ────────────────────────────────────────────────────────────
@@ -69,7 +70,43 @@ export default function ProfileScreen() {
         const profileRes = await getProfile(user.id);
         const p = profileRes.profile as any;
         setTotalSaved(p?.total_saved || 0);
-        setStreak(Math.floor(Math.random() * 20) + 1);
+
+        // Calculate real streak from transaction dates
+        try {
+            const { data } = await supabase
+                .from('transactions')
+                .select('created_at')
+                .eq('user_id', user.id)
+                .order('created_at', { ascending: false });
+
+            if (data && data.length > 0) {
+                // Get unique dates (YYYY-MM-DD)
+                const uniqueDates = [...new Set(
+                    data.map(t => new Date(t.created_at).toISOString().split('T')[0])
+                )].sort().reverse();
+
+                // Count consecutive days backwards from today
+                let count = 0;
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+
+                for (let i = 0; i < uniqueDates.length; i++) {
+                    const checkDate = new Date(today);
+                    checkDate.setDate(checkDate.getDate() - i);
+                    const checkStr = checkDate.toISOString().split('T')[0];
+                    if (uniqueDates.includes(checkStr)) {
+                        count++;
+                    } else {
+                        break;
+                    }
+                }
+                setStreak(count);
+            } else {
+                setStreak(0);
+            }
+        } catch {
+            setStreak(0);
+        }
     }, [user]);
 
     // Reload avatar & name every time screen is focused

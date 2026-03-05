@@ -16,6 +16,8 @@ import {
     RefreshControl,
     Alert,
     Linking,
+    Animated,
+    Easing,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -30,6 +32,7 @@ import { simulateSms } from '@/src/services/smsParser';
 import { scanRecentSms, startSmsPolling, stopSmsPolling, resetProcessedIds } from '@/src/services/smsReader';
 import { getSavedAvatarId, getAvatarById } from '@/src/services/avatarService';
 import { FontSize, FontWeight, Spacing, BorderRadius, Shadows } from '@/src/theme';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface Transaction {
     id: string;
@@ -37,6 +40,32 @@ interface Transaction {
     saved_amount: number;
     description: string;
     created_at: string;
+}
+
+// ─── Skeleton Shimmer ────────────────────────────────────────────────────────
+function SkeletonPulse({ width: w, height: h, style }: { width: number | string; height: number; style?: any }) {
+    const pulse = React.useRef(new Animated.Value(0.3)).current;
+    React.useEffect(() => {
+        Animated.loop(
+            Animated.sequence([
+                Animated.timing(pulse, { toValue: 0.7, duration: 800, useNativeDriver: true }),
+                Animated.timing(pulse, { toValue: 0.3, duration: 800, useNativeDriver: true }),
+            ])
+        ).start();
+    }, []);
+    return <Animated.View style={[{ width: w as any, height: h, borderRadius: 8, backgroundColor: 'rgba(138,79,255,0.2)', opacity: pulse }, style]} />;
+}
+
+// ─── Animated Press Button ───────────────────────────────────────────────────
+function PressableScale({ children, onPress, style }: { children: React.ReactNode; onPress: () => void; style?: any }) {
+    const scale = React.useRef(new Animated.Value(1)).current;
+    const onPressIn = () => Animated.spring(scale, { toValue: 0.92, useNativeDriver: true, speed: 50 }).start();
+    const onPressOut = () => Animated.spring(scale, { toValue: 1, useNativeDriver: true, friction: 3, tension: 100 }).start();
+    return (
+        <TouchableOpacity activeOpacity={1} onPressIn={onPressIn} onPressOut={onPressOut} onPress={onPress}>
+            <Animated.View style={[style, { transform: [{ scale }] }]}>{children}</Animated.View>
+        </TouchableOpacity>
+    );
 }
 
 export default function DashboardScreen() {
@@ -53,6 +82,15 @@ export default function DashboardScreen() {
     const [scanLoading, setScanLoading] = useState(false);
     const [lastSaved, setLastSaved] = useState<{ amount: number; merchant: string } | null>(null);
     const [avatarId, setAvatarId] = useState('1');
+    const [hideBalance, setHideBalance] = useState(false);
+    const [balanceRevealed, setBalanceRevealed] = useState(false);
+
+    // Animated count-up
+    const displaySaved = React.useRef(new Animated.Value(0)).current;
+    const [displayAmount, setDisplayAmount] = useState(0);
+
+    // Staggered transaction animations
+    const txnAnims = React.useRef(Array.from({ length: 5 }, () => new Animated.Value(0))).current;
 
     const fetchData = useCallback(async () => {
         if (!user) return;
@@ -74,14 +112,50 @@ export default function DashboardScreen() {
     useFocusEffect(
         useCallback(() => {
             getSavedAvatarId().then(setAvatarId);
+            // Load hide balance setting
+            AsyncStorage.getItem('@microsave_security').then(val => {
+                if (val) {
+                    const s = JSON.parse(val);
+                    setHideBalance(!!s.hideBalance);
+                    setBalanceRevealed(false);
+                }
+            });
         }, [])
     );
 
     const onRefresh = async () => {
         setRefreshing(true);
         await fetchData();
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         setRefreshing(false);
     };
+
+    // Animate savings count-up when totalSaved changes
+    React.useEffect(() => {
+        if (totalSaved <= 0) { setDisplayAmount(0); return; }
+        const duration = 1200;
+        const startVal = displayAmount;
+        const startTime = Date.now();
+        const animate = () => {
+            const t = Math.min((Date.now() - startTime) / duration, 1);
+            const eased = 1 - Math.pow(1 - t, 3);
+            setDisplayAmount(Math.round(startVal + (totalSaved - startVal) * eased));
+            if (t < 1) requestAnimationFrame(animate);
+        };
+        requestAnimationFrame(animate);
+    }, [totalSaved]);
+
+    // Stagger transaction slide-in
+    React.useEffect(() => {
+        if (transactions.length > 0) {
+            txnAnims.forEach(a => a.setValue(0));
+            Animated.stagger(80,
+                txnAnims.slice(0, Math.min(transactions.length, 5)).map(a =>
+                    Animated.timing(a, { toValue: 1, duration: 400, easing: Easing.out(Easing.cubic), useNativeDriver: true })
+                )
+            ).start();
+        }
+    }, [transactions]);
 
     const progress = goalAmount > 0 ? Math.min((totalSaved / goalAmount) * 100, 100) : 0;
     const userName = (user as any)?.user_metadata?.name || 'Student';
@@ -238,28 +312,43 @@ export default function DashboardScreen() {
                     </TouchableOpacity>
                 </View>
 
-                {/* Savings Card */}
-                <LinearGradient
-                    colors={['#8A4FFF', '#6C63FF']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.savingsCard}
-                >
-                    <Text style={styles.savingsLabel}>Total Savings</Text>
-                    <Text style={styles.savingsAmount}>₹{totalSaved.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
-                    <View style={styles.goalRow}>
-                        <Text style={styles.goalText}>Goal: ₹{goalAmount.toLocaleString('en-IN')}</Text>
-                        <Text style={styles.goalPercent}>{Math.round(progress)}%</Text>
+                {loading ? (
+                    /* Skeleton Loading State */
+                    <View style={[styles.savingsCard, { backgroundColor: 'rgba(138,79,255,0.15)' }]}>
+                        <SkeletonPulse width={100} height={14} style={{ marginBottom: 12 }} />
+                        <SkeletonPulse width={180} height={36} style={{ marginBottom: 16 }} />
+                        <SkeletonPulse width="100%" height={8} />
                     </View>
-                    <View style={styles.progressBar}>
-                        <LinearGradient
-                            colors={['#00D4FF', '#00E38C']}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 0 }}
-                            style={[styles.progressFill, { width: `${progress}%` }]}
-                        />
-                    </View>
-                </LinearGradient>
+                ) : (
+                    /* Savings Card — Glassmorphism */
+                    <LinearGradient
+                        colors={['rgba(138,79,255,0.85)', 'rgba(108,99,255,0.85)']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.savingsCard}
+                    >
+                        {/* Glass overlay */}
+                        <View style={styles.glassOverlay} />
+                        <Text style={styles.savingsLabel}>Total Savings</Text>
+                        <TouchableOpacity onPress={() => hideBalance && setBalanceRevealed(!balanceRevealed)} activeOpacity={hideBalance ? 0.6 : 1}>
+                            <Text style={styles.savingsAmount}>
+                                {hideBalance && !balanceRevealed ? '●●●●●●' : `₹${displayAmount.toLocaleString('en-IN')}`}
+                            </Text>
+                        </TouchableOpacity>
+                        <View style={styles.goalRow}>
+                            <Text style={styles.goalText}>Goal: ₹{goalAmount.toLocaleString('en-IN')}</Text>
+                            <Text style={styles.goalPercent}>{Math.round(progress)}%</Text>
+                        </View>
+                        <View style={styles.progressBar}>
+                            <LinearGradient
+                                colors={['#00D4FF', '#00E38C']}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 0 }}
+                                style={[styles.progressFill, { width: `${progress}%` }]}
+                            />
+                        </View>
+                    </LinearGradient>
+                )}
 
                 {/* Simulate SMS Demo Button */}
                 <TouchableOpacity
@@ -332,20 +421,26 @@ export default function DashboardScreen() {
                     </LinearGradient>
                 </TouchableOpacity>
 
-                {/* Quick Actions */}
+                {/* Quick Actions — with press animation */}
                 <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Quick Actions</Text>
-                <View style={styles.actionsRow}>
-                    {quickActions.map((action, i) => (
-                        <TouchableOpacity key={i} style={styles.actionItem} onPress={() => handleQuickAction(action.label)}>
-                            <View style={[styles.actionIcon, { backgroundColor: colors.primaryLight }]}>
-                                <Ionicons name={action.icon} size={24} color={action.color} />
-                            </View>
-                            <Text style={[styles.actionLabel, { color: colors.textSecondary }]}>{action.label}</Text>
-                        </TouchableOpacity>
-                    ))}
-                </View>
+                {loading ? (
+                    <View style={styles.actionsRow}>
+                        {[0, 1, 2, 3].map(i => <SkeletonPulse key={i} width={56} height={56} style={{ borderRadius: 28 }} />)}
+                    </View>
+                ) : (
+                    <View style={styles.actionsRow}>
+                        {quickActions.map((action, i) => (
+                            <PressableScale key={i} style={styles.actionItem} onPress={() => handleQuickAction(action.label)}>
+                                <View style={[styles.actionIcon, styles.glassAction, { backgroundColor: 'rgba(138,79,255,0.12)', borderColor: 'rgba(138,79,255,0.25)' }]}>
+                                    <Ionicons name={action.icon} size={24} color={action.color} />
+                                </View>
+                                <Text style={[styles.actionLabel, { color: colors.textSecondary }]}>{action.label}</Text>
+                            </PressableScale>
+                        ))}
+                    </View>
+                )}
 
-                {/* Recent Activity */}
+                {/* Recent Activity — with staggered slide-in */}
                 <View style={styles.activityHeader}>
                     <Text style={[styles.sectionTitle, { color: colors.textPrimary, marginBottom: 0 }]}>Recent Activity</Text>
                     <TouchableOpacity onPress={() => router.push('/transactions')}>
@@ -353,7 +448,20 @@ export default function DashboardScreen() {
                     </TouchableOpacity>
                 </View>
 
-                {transactions.length === 0 ? (
+                {loading ? (
+                    <View style={{ gap: 12 }}>
+                        {[0, 1, 2].map(i => (
+                            <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                                <SkeletonPulse width={46} height={46} style={{ borderRadius: 14 }} />
+                                <View style={{ flex: 1, gap: 6 }}>
+                                    <SkeletonPulse width="70%" height={14} />
+                                    <SkeletonPulse width="40%" height={10} />
+                                </View>
+                                <SkeletonPulse width={60} height={14} />
+                            </View>
+                        ))}
+                    </View>
+                ) : transactions.length === 0 ? (
                     <View style={styles.emptyState}>
                         <Text style={{ fontSize: 42, marginBottom: Spacing.md }}>📊</Text>
                         <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>No activity yet</Text>
@@ -362,11 +470,23 @@ export default function DashboardScreen() {
                         </Text>
                     </View>
                 ) : (
-                    transactions.slice(0, 5).map((txn) => {
+                    transactions.slice(0, 5).map((txn, idx) => {
                         const { icon, bg } = getTxnIcon(txn.description || '');
                         const isPositive = txn.saved_amount > txn.amount;
+                        const anim = txnAnims[idx];
                         return (
-                            <View key={txn.id} style={[styles.txnItem, { borderBottomColor: colors.cardBorder }]}>
+                            <Animated.View
+                                key={txn.id}
+                                style={[styles.txnItem, {
+                                    borderBottomColor: colors.cardBorder,
+                                    backgroundColor: 'rgba(138,79,255,0.04)',
+                                    borderRadius: 12,
+                                    marginBottom: 4,
+                                    paddingHorizontal: 12,
+                                    opacity: anim,
+                                    transform: [{ translateX: anim.interpolate({ inputRange: [0, 1], outputRange: [40, 0] }) }],
+                                }]}
+                            >
                                 <View style={[styles.txnIcon, { backgroundColor: bg }]}>
                                     <Text style={{ fontSize: 22 }}>{icon}</Text>
                                 </View>
@@ -379,7 +499,7 @@ export default function DashboardScreen() {
                                 <Text style={[styles.txnAmount, { color: isPositive ? colors.success : colors.textPrimary }]}>
                                     {isPositive ? '+' : '-'}₹{txn.amount.toFixed(2)}
                                 </Text>
-                            </View>
+                            </Animated.View>
                         );
                     })
                 )}
@@ -398,12 +518,20 @@ const styles = StyleSheet.create({
     avatarEmoji: { fontSize: 20 },
     headerTitle: { flex: 1, fontSize: FontSize.xl, fontWeight: FontWeight.bold, textAlign: 'center' },
 
-    // Savings Card  
+    // Savings Card — Glassmorphism
     savingsCard: {
         borderRadius: BorderRadius.xxl,
         padding: Spacing.lg,
         marginBottom: Spacing.xl,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.15)',
+        overflow: 'hidden',
         ...Shadows.lg,
+    },
+    glassOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(255,255,255,0.06)',
+        borderRadius: BorderRadius.xxl,
     },
     savingsLabel: { fontSize: FontSize.sm, color: 'rgba(255,255,255,0.7)', fontWeight: FontWeight.medium },
     savingsAmount: { fontSize: FontSize.hero, color: '#FFFFFF', fontWeight: FontWeight.heavy, marginVertical: Spacing.sm },
@@ -413,7 +541,7 @@ const styles = StyleSheet.create({
     progressBar: {
         height: 8,
         borderRadius: 4,
-        backgroundColor: 'rgba(255,255,255,0.2)',
+        backgroundColor: 'rgba(255,255,255,0.15)',
         overflow: 'hidden',
     },
     progressFill: { height: '100%', borderRadius: 4 },
@@ -429,6 +557,9 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         marginBottom: Spacing.xs,
+    },
+    glassAction: {
+        borderWidth: 1,
     },
     actionLabel: { fontSize: FontSize.xs, fontWeight: FontWeight.medium },
 

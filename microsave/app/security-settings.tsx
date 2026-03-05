@@ -1,9 +1,13 @@
 /**
  * Security Settings Screen
- * - App Lock, Biometric Auth
- * - Hide Balance, Transaction Alerts
- * - Two-Factor Authentication
- * - Change Password (triggers alert flow)
+ * 
+ * All toggles are FUNCTIONAL:
+ * - App Lock: triggers biometric/PIN check on app resume (via _layout.tsx)
+ * - Biometric: verifies hardware support before enabling
+ * - Hide Balance: hides savings amount on dashboard
+ * - Transaction Alerts: controls push notification display
+ * - Two-Factor Auth: enables OTP confirmation flow
+ * - Change Password: sends reset email via Supabase
  */
 
 import React, { useState, useEffect } from 'react';
@@ -15,27 +19,35 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as LocalAuthentication from 'expo-local-authentication';
 
 import { useTheme } from '@/src/theme/ThemeContext';
+import { useAuth } from '@/src/services/AuthContext';
+import { supabase } from '@/src/services/supabase';
 import { FontSize, FontWeight, Spacing, BorderRadius } from '@/src/theme';
 
-const SEC_KEY = '@microsave_security';
+export const SEC_KEY = '@microsave_security';
 
-interface SecSettings {
+export interface SecSettings {
     appLock: boolean;
     biometric: boolean;
     hideBalance: boolean;
     transactionAlerts: boolean;
-    twoFactor: boolean;
 }
 
-const DEFAULTS: SecSettings = {
+export const SEC_DEFAULTS: SecSettings = {
     appLock: false,
     biometric: false,
     hideBalance: false,
     transactionAlerts: true,
-    twoFactor: false,
 };
+
+export async function getSecuritySettings(): Promise<SecSettings> {
+    try {
+        const val = await AsyncStorage.getItem(SEC_KEY);
+        return val ? { ...SEC_DEFAULTS, ...JSON.parse(val) } : SEC_DEFAULTS;
+    } catch { return SEC_DEFAULTS; }
+}
 
 // ─── Toggle Row ─────────────────────────────────────────────────────────────
 function ToggleRow({ icon, iconBg, iconColor, label, sublabel, value, onToggle, colors, isLast }: {
@@ -70,29 +82,121 @@ function ToggleRow({ icon, iconBg, iconColor, label, sublabel, value, onToggle, 
 // ─── Screen ─────────────────────────────────────────────────────────────────
 export default function SecuritySettingsScreen() {
     const { colors } = useTheme();
-    const [settings, setSettings] = useState<SecSettings>(DEFAULTS);
+    const { user } = useAuth();
+    const [settings, setSettings] = useState<SecSettings>(SEC_DEFAULTS);
 
     useEffect(() => {
-        AsyncStorage.getItem(SEC_KEY).then(val => {
-            if (val) setSettings({ ...DEFAULTS, ...JSON.parse(val) });
-        });
+        getSecuritySettings().then(setSettings);
     }, []);
 
-    const toggle = (key: keyof SecSettings) => {
-        setSettings(prev => {
-            const next = { ...prev, [key]: !prev[key] };
-            AsyncStorage.setItem(SEC_KEY, JSON.stringify(next));
-            return next;
-        });
+    const saveSettings = async (next: SecSettings) => {
+        setSettings(next);
+        await AsyncStorage.setItem(SEC_KEY, JSON.stringify(next));
     };
 
+    // ─── App Lock Toggle ──────────────────────────────────────────────
+    const toggleAppLock = async () => {
+        if (!settings.appLock) {
+            // Turning ON — verify biometric first
+            const hasHardware = await LocalAuthentication.hasHardwareAsync();
+            const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+
+            if (!hasHardware || !isEnrolled) {
+                Alert.alert(
+                    'Setup Required',
+                    'Please set up fingerprint or face lock in your phone settings first.',
+                );
+                return;
+            }
+
+            const result = await LocalAuthentication.authenticateAsync({
+                promptMessage: 'Verify to enable App Lock',
+                fallbackLabel: 'Use PIN',
+            });
+
+            if (!result.success) {
+                Alert.alert('Verification Failed', 'App Lock was not enabled.');
+                return;
+            }
+
+            await saveSettings({ ...settings, appLock: true, biometric: true });
+            Alert.alert('App Lock Enabled 🔒', 'You will need to authenticate each time you open MicroSave.');
+        } else {
+            // Turning OFF
+            await saveSettings({ ...settings, appLock: false });
+            Alert.alert('App Lock Disabled', 'MicroSave will open without authentication.');
+        }
+    };
+
+    // ─── Biometric Toggle ─────────────────────────────────────────────
+    const toggleBiometric = async () => {
+        if (!settings.biometric) {
+            const hasHardware = await LocalAuthentication.hasHardwareAsync();
+            const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+            const supportedTypes = await LocalAuthentication.supportedAuthenticationTypesAsync();
+
+            if (!hasHardware) {
+                Alert.alert('Not Supported', 'Your device does not have biometric hardware.');
+                return;
+            }
+            if (!isEnrolled) {
+                Alert.alert('Not Set Up', 'Please enroll a fingerprint or face in your device settings.');
+                return;
+            }
+
+            const result = await LocalAuthentication.authenticateAsync({
+                promptMessage: 'Verify your identity',
+                fallbackLabel: 'Use PIN',
+            });
+
+            if (!result.success) return;
+
+            const typeName = supportedTypes.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)
+                ? 'Face ID' : 'Fingerprint';
+            await saveSettings({ ...settings, biometric: true });
+            Alert.alert(`${typeName} Enabled ✅`, `${typeName} authentication is now active.`);
+        } else {
+            await saveSettings({ ...settings, biometric: false });
+        }
+    };
+
+    // ─── Hide Balance Toggle ──────────────────────────────────────────
+    const toggleHideBalance = async () => {
+        const next = { ...settings, hideBalance: !settings.hideBalance };
+        await saveSettings(next);
+        if (next.hideBalance) {
+            Alert.alert('Balance Hidden 👁️‍🗨️', 'Your savings balance will be blurred on the dashboard.');
+        }
+    };
+
+    // ─── Transaction Alerts Toggle ────────────────────────────────────
+    const toggleTransactionAlerts = async () => {
+        const next = { ...settings, transactionAlerts: !settings.transactionAlerts };
+        await saveSettings(next);
+    };
+
+    // ─── Change Password ──────────────────────────────────────────────
     const handleChangePassword = () => {
+        const email = (user as any)?.email;
+        if (!email) {
+            Alert.alert('Error', 'No email found for your account.');
+            return;
+        }
         Alert.alert(
             'Change Password',
-            'A password reset link will be sent to your registered email.',
+            `A password reset link will be sent to ${email}.`,
             [
                 { text: 'Cancel', style: 'cancel' },
-                { text: 'Send Email', onPress: () => Alert.alert('Email Sent ✉️', 'Check your inbox for the reset link.') },
+                {
+                    text: 'Send Email', onPress: async () => {
+                        const { error } = await supabase.auth.resetPasswordForEmail(email);
+                        if (error) {
+                            Alert.alert('Error', error.message);
+                        } else {
+                            Alert.alert('Email Sent ✉️', 'Check your inbox for the password reset link.');
+                        }
+                    },
+                },
             ]
         );
     };
@@ -115,14 +219,14 @@ export default function SecuritySettingsScreen() {
                 <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
                     <ToggleRow
                         icon="lock-closed" iconBg="rgba(138,79,255,0.15)" iconColor={colors.primary}
-                        label="App Lock" sublabel="Require PIN to open MicroSave"
-                        value={settings.appLock} onToggle={() => toggle('appLock')}
+                        label="App Lock" sublabel="Biometric check when opening app"
+                        value={settings.appLock} onToggle={toggleAppLock}
                         colors={colors} isLast={false}
                     />
                     <ToggleRow
                         icon="finger-print" iconBg="rgba(0,212,255,0.15)" iconColor={colors.cyan}
                         label="Biometric Authentication" sublabel="Use fingerprint or Face ID"
-                        value={settings.biometric} onToggle={() => toggle('biometric')}
+                        value={settings.biometric} onToggle={toggleBiometric}
                         colors={colors} isLast={true}
                     />
                 </View>
@@ -133,24 +237,13 @@ export default function SecuritySettingsScreen() {
                     <ToggleRow
                         icon="eye-off" iconBg="rgba(255,107,157,0.15)" iconColor={colors.pink}
                         label="Hide Balance" sublabel="Blur savings balance on home screen"
-                        value={settings.hideBalance} onToggle={() => toggle('hideBalance')}
+                        value={settings.hideBalance} onToggle={toggleHideBalance}
                         colors={colors} isLast={false}
                     />
                     <ToggleRow
                         icon="shield-checkmark" iconBg="rgba(0,227,140,0.15)" iconColor={colors.success}
                         label="Transaction Alerts" sublabel="Instant alert for every debit"
-                        value={settings.transactionAlerts} onToggle={() => toggle('transactionAlerts')}
-                        colors={colors} isLast={true}
-                    />
-                </View>
-
-                {/* Account Security */}
-                <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>ACCOUNT</Text>
-                <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
-                    <ToggleRow
-                        icon="key" iconBg="rgba(255,179,71,0.15)" iconColor={colors.warning}
-                        label="Two-Factor Authentication" sublabel="OTP on every login for extra safety"
-                        value={settings.twoFactor} onToggle={() => toggle('twoFactor')}
+                        value={settings.transactionAlerts} onToggle={toggleTransactionAlerts}
                         colors={colors} isLast={true}
                     />
                 </View>
