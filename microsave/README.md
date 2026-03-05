@@ -1,85 +1,171 @@
-<div align="center">
-  <img src="assets/splash.gif" width="120" />
-  <h1>MicroSave 🦊</h1>
-  <p><b>Transform everyday spending into automated micro-investments using AI and SMS parsing.</b></p>
-</div>
+# 🐷 MicroSave — Auto Round-Up Savings App
+
+> *Every rupee counts. MicroSave automatically detects your UPI payments via SMS and rounds up the change into your savings — so you save without even thinking about it.*
+
+Built for **HackArena 2026** by Team Neophytes.
 
 ---
 
-## 💡 The Problem
+## 📱 What It Does
 
-Millions of students and young professionals struggle with saving money. It requires discipline, constant budget tracking, and manual transfers. When you're buying a ₹18 chai or a ₹140 Zomato order, saving feels impossible.
+1. **Auto-Detects UPI Payments** — Reads bank SMS messages in real-time using a native Kotlin module
+2. **Round-Up Savings** — If you spend ₹47, MicroSave saves ₹3 (rounds up to ₹50)
+3. **Auto-Investment** — When savings hit ₹100, it auto-invests for you
+4. **Savings Goals / Pots** — Create named goals like "PS5 Fund" or "Trip to Goa" with deadlines, progress tracking, and confetti celebrations
+5. **AI Insights** — Categorizes your spending (Food, Shopping, Transport) and gives smart suggestions
+6. **Quick Pay** — Launch PhonePe, Google Pay, or Paytm directly from the app
 
-## 🚀 The Solution: MicroSave
+---
 
-MicroSave makes saving invisible. Every time you make a UPI payment, the app natively reads the bank SMS, rounds up your purchase to the nearest ₹10, and quietly funnels that spare change into a digital vault. 
+## 🛠 Technology Stack
 
-Once your vault hits ₹100, the money is automatically invested to generate returns. You don't have to lift a finger.
+### Frontend (Mobile App)
 
-## ✨ Key Features
+| Technology | Purpose |
+|---|---|
+| **React Native** | Cross-platform mobile framework |
+| **Expo SDK 52** | Build tooling, dev server, native modules |
+| **Expo Router** | File-based navigation (tabs, stacks, modals) |
+| **TypeScript** | Type-safe JavaScript |
+| **React Native SVG** | Donut charts on Insights screen |
+| **Expo Linear Gradient** | Gradient buttons, cards, banners |
+| **Expo Haptics** | Vibration feedback on payments & saves |
+| **Expo Notifications** | Push notifications for transaction alerts |
+| **Expo Local Authentication** | Biometric auth (fingerprint/face) |
+| **AsyncStorage** | Local persistence (goals, settings, avatar) |
 
-*   **🤖 Native SMS Parsing Engine**: Automatically detects bank debits on Android locally—no manual input required and no privacy concerns pulling banking APIs.
-*   **💸 Automated Round-Ups**: Bought coffee for ₹63? We round it to ₹70 and save ₹7 for you.
-*   **📈 Auto-Investments**: Once your spare change hits the ₹100 threshold, it’s automatically moved to an investment pool.
-*   **📊 AI-Powered Insights**: Beautiful charts breaking down your savings vs. expenses and predictive AI suggestions on how to maximize your savings.
-*   **🔔 Intelligent Push Notifications**: Get notified only on savings milestones and auto-investments.
-*   **🦊 Gamified Profiles**: Pick from 10 distinct animated avatars, level up as you save, and secure your app with biometrics.
+### Native Modules (Android)
 
-## 🛠️ Tech Stack
+| Technology | Purpose |
+|---|---|
+| **Kotlin** | Native SMS Reader module (`SmsReaderModule.kt`) |
+| **Android SMS API** | Reading SMS inbox for UPI transaction detection |
+| **Android Deep Links** | Opening PhonePe, GPay, Paytm via `phonepe://`, `tez://` |
+| **AndroidManifest queries** | Android 11+ package visibility for UPI apps |
 
-*   **Frontend**: React Native, Expo Router, Reanimated
-*   **Backend & DB**: Supabase (PostgreSQL), Row Level Security (RLS)
-*   **Native Modules**: Kotlin (Android `BroadcastReceiver` for real-time background SMS reading)
-*   **Storage**: `@react-native-async-storage` for offline preferences
+### Backend & Database
 
-## 📱 Screenshots
+| Technology | Purpose |
+|---|---|
+| **Supabase** | Backend-as-a-Service (auth, database, API) |
+| **Supabase Auth** | Email/password signup & login |
+| **PostgreSQL** (via Supabase) | `profiles`, `transactions`, `investments` tables |
+| **Row-Level Security (RLS)** | Per-user data isolation |
+| **Supabase RPC** | Server-side functions for safe total updates |
 
-| Dashboard | Profile & Avatars | SMS Engine Log | AI Insights |
-|:---:|:---:|:---:|:---:|
-| *(Add screenshot here)* | *(Add screenshot here)* | *(Add screenshot here)* | *(Add screenshot here)* |
+### Core Logic (Custom Modules)
+
+| Module | Purpose |
+|---|---|
+| `smsParser.ts` | Regex-based UPI debit/credit detection from bank SMS |
+| `savingsEngine.ts` | Round-up calculation, auto-invest at ₹100 threshold |
+| `smsReader.ts` | Background SMS polling every 30 seconds |
+| `avatarService.ts` | 10 animated character avatars for profiles |
+| `notificationService.ts` | Push notification triggers |
+
+### Dev & Build Tools
+
+| Technology | Purpose |
+|---|---|
+| **Node.js / npm** | Package management |
+| **Metro Bundler** | JavaScript bundler for React Native |
+| **Gradle** | Android native build system |
+| **Git / GitHub** | Version control |
+| **Android SDK / ADB** | Device deployment & debugging |
+
+---
 
 ## 🚀 Getting Started
 
-Since this app uses custom native Android code for SMS detection (`SmsReaderModule`), it **cannot** be run in Expo Go. It must be built natively.
-
 ### Prerequisites
-*   Node.js (v18+)
-*   Android Studio / Android SDK
-*   Supabase Account (for backend)
+- Node.js 18+
+- Android Studio with SDK
+- An Android device with USB debugging enabled
 
-### 1. Clone & Install
+### Installation
+
 ```bash
+# Clone the repo
 git clone https://github.com/shalin0000007/neophytes.git
 cd neophytes/microsave
+
+# Install dependencies
 npm install
-```
 
-### 2. Environment Variables
-Create a `.env` file in the root `microsave` directory:
-```env
-EXPO_PUBLIC_SUPABASE_URL=your_supabase_url
-EXPO_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-```
+# Create .env file with your Supabase credentials
+echo "EXPO_PUBLIC_SUPABASE_URL=your_url" > .env
+echo "EXPO_PUBLIC_SUPABASE_ANON_KEY=your_key" >> .env
 
-### 3. Database Setup
-Run the SQL script located in `execution/setup_supabase.sql` in your Supabase SQL Editor. This sets up the `profiles`, `transactions`, and `investments` tables with proper RLS policies.
-
-### 4. Run Locally on Android Device
-Connect your Android phone via USB (with USB Debugging enabled).
-```bash
-# This will compile the Kotlin code and install the APK
+# Build and run on Android device
 npx expo run:android
 ```
 
-## 🧪 Testing the SMS Engine (Phase 5)
+---
 
-If you don't want to wait for a real bank SMS, you can use the built-in simulator on the Dashboard:
-1. Tap any of the **Phase 5 Testing Engine** buttons (e.g., Zomato, Amazon, Chai tapri).
-2. The app will inject a simulated debit SMS into the native parser.
-3. Watch your savings ring animate and fill up!
+## 📂 Project Structure
 
-## 🔐 Privacy by Design
-MicroSave never sends your raw SMS data to the cloud. SMS parsing happens **100% locally** on the Android device using standard Regex. Only the extracted amounts (spent/saved) are synced to your secure Supabase profile.
+```
+microsave/
+├── app/
+│   ├── (tabs)/
+│   │   ├── index.tsx          # Dashboard (savings card, quick actions, SMS scan)
+│   │   ├── insights.tsx       # Spending analysis with donut chart & AI suggestions
+│   │   ├── pay.tsx            # Quick Pay (PhonePe, GPay, Paytm launcher)
+│   │   ├── vault.tsx          # Savings Goals / Pots with progress tracking
+│   │   └── profile.tsx        # Profile with avatar, settings navigation
+│   ├── auth/
+│   │   ├── login.tsx          # Login screen
+│   │   └── signup.tsx         # Signup screen
+│   ├── notifications.tsx      # Notification preferences
+│   ├── personal-info.tsx      # Avatar picker & display name
+│   ├── security-settings.tsx  # Security toggles
+│   ├── transactions.tsx       # Full transaction history
+│   ├── receive.tsx            # QR code for receiving money
+│   ├── stats.tsx              # 4 chart types for spending stats
+│   └── _layout.tsx            # Root layout with splash screen
+├── src/
+│   ├── services/
+│   │   ├── savingsEngine.ts   # Core savings logic
+│   │   ├── smsParser.ts       # SMS parsing with regex
+│   │   ├── smsReader.ts       # Native SMS bridge + polling
+│   │   ├── AuthContext.tsx     # Auth state management
+│   │   ├── avatarService.ts   # Avatar system
+│   │   └── notificationService.ts
+│   ├── theme/
+│   │   ├── ThemeContext.tsx    # Dark/Light theme provider
+│   │   └── index.ts           # Design tokens
+│   └── components/
+│       ├── AnimatedCounter.tsx # Animated number counter
+│       ├── GlassCard.tsx      # Glassmorphism card
+│       └── TransactionItem.tsx
+├── android/                   # Native Android project (Kotlin SMS module)
+└── assets/                    # Splash GIF, icons
+```
 
 ---
-*Built with ❤️ for the Hackathon*
+
+## ✨ Key Features
+
+| Feature | Description |
+|---|---|
+| 🔍 SMS Auto-Detection | Native Kotlin module reads bank SMS in real-time |
+| 💰 Round-Up Savings | Automatically saves spare change from every UPI payment |
+| 📊 AI Insights | Categorizes spending and gives personalized suggestions |
+| 🎯 Goals / Pots | Named savings goals with deadlines, progress bars, confetti |
+| 👤 Avatar System | 10 animated character avatars |
+| 🌗 Dark/Light Theme | Toggle between dark and light mode |
+| 🔔 Push Notifications | Alerts for transactions, savings milestones |
+| 📈 Stats Dashboard | 4 chart types for spending analysis |
+| 🔐 Security Settings | App lock, biometric, 2FA toggles |
+
+---
+
+## 👥 Team Neophytes
+
+Built with ❤️ at HackArena 2026.
+
+---
+
+## 📄 License
+
+MIT License
