@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Environment variables (NEVER commit secrets)
+.env
+.env.local
+.env*.local
+
+# Expo
+.expo/
+dist/
+web-build/
+
+# Native builds
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Temp files
+.tmp/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
