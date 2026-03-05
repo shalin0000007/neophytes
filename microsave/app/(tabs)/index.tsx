@@ -14,14 +14,20 @@ import {
     ScrollView,
     TouchableOpacity,
     RefreshControl,
+    Alert,
+    Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
+import { useRouter } from 'expo-router';
 
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useAuth } from '@/src/services/AuthContext';
-import { getProfile, getRecentTransactions } from '@/src/services/savingsEngine';
+import { getProfile, getRecentTransactions, processTransaction, clearAllTransactions } from '@/src/services/savingsEngine';
+import { simulateSms } from '@/src/services/smsParser';
+import { scanRecentSms, startSmsPolling, stopSmsPolling, resetProcessedIds } from '@/src/services/smsReader';
 import { FontSize, FontWeight, Spacing, BorderRadius, Shadows } from '@/src/theme';
 
 interface Transaction {
@@ -35,12 +41,16 @@ interface Transaction {
 export default function DashboardScreen() {
     const { colors } = useTheme();
     const { user } = useAuth();
+    const router = useRouter();
     const [totalSaved, setTotalSaved] = useState(0);
     const [totalSpent, setTotalSpent] = useState(0);
     const [goalAmount, setGoalAmount] = useState(10000);
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const [simLoading, setSimLoading] = useState(false);
+    const [scanLoading, setScanLoading] = useState(false);
+    const [lastSaved, setLastSaved] = useState<{ amount: number; merchant: string } | null>(null);
 
     const fetchData = useCallback(async () => {
         if (!user) return;
@@ -66,6 +76,80 @@ export default function DashboardScreen() {
 
     const progress = goalAmount > 0 ? Math.min((totalSaved / goalAmount) * 100, 100) : 0;
     const userName = (user as any)?.user_metadata?.name || 'Student';
+
+    // Simulate receiving a UPI SMS (demo mode)
+    const handleSimulateSms = useCallback(async () => {
+        if (!user || simLoading) return;
+        setSimLoading(true);
+        const parsed = simulateSms();
+        if (!parsed) {
+            Alert.alert('Demo', 'Could not parse simulated SMS');
+            setSimLoading(false);
+            return;
+        }
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        const { error } = await processTransaction(user.id, parsed.amount, parsed.merchant);
+        if (!error) {
+            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            const savings = Math.ceil(parsed.amount / 10) * 10 - parsed.amount || 1;
+            setLastSaved({ amount: savings, merchant: parsed.merchant });
+            setTimeout(() => setLastSaved(null), 4000);
+            await fetchData();
+        } else {
+            Alert.alert('Error', error);
+        }
+        setSimLoading(false);
+    }, [user, simLoading, fetchData]);
+
+    // Scan real SMS inbox (clears old data first for correct dates)
+    const handleScanSms = useCallback(async () => {
+        if (!user || scanLoading) return;
+        setScanLoading(true);
+        const count = await scanRecentSms(user.id, (merchant, amount, saved) => {
+            setLastSaved({ amount: saved, merchant });
+            setTimeout(() => setLastSaved(null), 4000);
+        });
+        if (count > 0) {
+            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            await fetchData();
+            Alert.alert('SMS Scan', `Found ${count} new UPI transaction${count > 1 ? 's' : ''}!`);
+        } else if (count === 0) {
+            Alert.alert('SMS Scan', 'No new UPI transactions found in your recent messages.');
+        }
+        // count === -1 means scan couldn't run (alert already shown by smsReader)
+        setScanLoading(false);
+    }, [user, scanLoading, fetchData]);
+
+    // Start SMS polling on mount (production mode)
+    useEffect(() => {
+        if (!user) return;
+        startSmsPolling(user.id, (merchant, _amount, saved) => {
+            setLastSaved({ amount: saved, merchant });
+            setTimeout(() => setLastSaved(null), 4000);
+            fetchData();
+        });
+        return () => stopSmsPolling();
+    }, [user]);
+
+    // Quick action handlers
+    const handleQuickAction = (label: string) => {
+        switch (label) {
+            case 'Send':
+                Linking.openURL('upi://pay').catch(() => {
+                    Alert.alert('No UPI App', 'No UPI payment app found on this device.');
+                });
+                break;
+            case 'Receive':
+                router.push('/receive');
+                break;
+            case 'Save':
+                router.push('/(tabs)/vault');
+                break;
+            case 'Stats':
+                router.push('/stats');
+                break;
+        }
+    };
 
     // Quick action items
     const quickActions = [
@@ -127,11 +211,82 @@ export default function DashboardScreen() {
                     </View>
                 </LinearGradient>
 
+                {/* Simulate SMS Demo Button */}
+                <TouchableOpacity
+                    onPress={handleSimulateSms}
+                    disabled={simLoading}
+                    activeOpacity={0.85}
+                    style={{ marginBottom: Spacing.lg }}
+                >
+                    <LinearGradient
+                        colors={['#1A1730', '#251D40']}
+                        style={[styles.demoCard, { borderColor: colors.primary, opacity: simLoading ? 0.6 : 1 }]}
+                    >
+                        <View style={[styles.demoIconWrap, { backgroundColor: colors.primaryLight }]}>
+                            <Text style={{ fontSize: 22 }}>📩</Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                            <Text style={[styles.demoTitle, { color: colors.textPrimary }]}>
+                                {simLoading ? 'Processing...' : '🚀 Simulate UPI SMS'}
+                            </Text>
+                            <Text style={[styles.demoSub, { color: colors.textSecondary }]}>
+                                {lastSaved
+                                    ? `✅ Saved ₹${lastSaved.amount.toFixed(2)} from ${lastSaved.merchant}!`
+                                    : 'Tap to auto-detect a fake bank SMS'}
+                            </Text>
+                        </View>
+                        <Ionicons name="flash" size={20} color={colors.primary} />
+                    </LinearGradient>
+                </TouchableOpacity>
+
+                {/* Scan Real SMS Button (long-press = clear & rescan) */}
+                <TouchableOpacity
+                    onPress={handleScanSms}
+                    onLongPress={async () => {
+                        if (!user) return;
+                        Alert.alert('Clear & Rescan', 'This will delete all old transactions and re-scan your SMS with correct dates.', [
+                            { text: 'Cancel', style: 'cancel' },
+                            {
+                                text: 'Clear & Rescan', style: 'destructive', onPress: async () => {
+                                    setScanLoading(true);
+                                    await clearAllTransactions(user.id);
+                                    await resetProcessedIds();
+                                    const count = await scanRecentSms(user.id);
+                                    await fetchData();
+                                    setScanLoading(false);
+                                    Alert.alert('Done', `Rescanned: found ${count} transactions with correct dates!`);
+                                }
+                            },
+                        ]);
+                    }}
+                    disabled={scanLoading}
+                    activeOpacity={0.85}
+                    style={{ marginBottom: Spacing.lg }}
+                >
+                    <LinearGradient
+                        colors={['#1A1730', '#251D40']}
+                        style={[styles.demoCard, { borderColor: colors.cyan, opacity: scanLoading ? 0.6 : 1 }]}
+                    >
+                        <View style={[styles.demoIconWrap, { backgroundColor: 'rgba(0,212,255,0.15)' }]}>
+                            <Text style={{ fontSize: 22 }}>📨</Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                            <Text style={[styles.demoTitle, { color: colors.textPrimary }]}>
+                                {scanLoading ? 'Scanning...' : '📱 Scan Real SMS'}
+                            </Text>
+                            <Text style={[styles.demoSub, { color: colors.textSecondary }]}>
+                                Read your inbox for UPI transaction messages
+                            </Text>
+                        </View>
+                        <Ionicons name="scan" size={20} color={colors.cyan} />
+                    </LinearGradient>
+                </TouchableOpacity>
+
                 {/* Quick Actions */}
                 <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Quick Actions</Text>
                 <View style={styles.actionsRow}>
                     {quickActions.map((action, i) => (
-                        <TouchableOpacity key={i} style={styles.actionItem}>
+                        <TouchableOpacity key={i} style={styles.actionItem} onPress={() => handleQuickAction(action.label)}>
                             <View style={[styles.actionIcon, { backgroundColor: colors.primaryLight }]}>
                                 <Ionicons name={action.icon} size={24} color={action.color} />
                             </View>
@@ -143,7 +298,7 @@ export default function DashboardScreen() {
                 {/* Recent Activity */}
                 <View style={styles.activityHeader}>
                     <Text style={[styles.sectionTitle, { color: colors.textPrimary, marginBottom: 0 }]}>Recent Activity</Text>
-                    <TouchableOpacity>
+                    <TouchableOpacity onPress={() => router.push('/transactions')}>
                         <Text style={[styles.seeAll, { color: colors.cyan }]}>See All</Text>
                     </TouchableOpacity>
                 </View>
@@ -243,4 +398,23 @@ const styles = StyleSheet.create({
     emptyState: { alignItems: 'center', paddingVertical: Spacing.xxl },
     emptyTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.semibold },
     emptySub: { fontSize: FontSize.sm, marginTop: Spacing.xs, textAlign: 'center' },
+
+    // Demo SMS button
+    demoCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        borderRadius: BorderRadius.xl,
+        borderWidth: 1,
+        padding: Spacing.md,
+        gap: Spacing.md,
+    },
+    demoIconWrap: {
+        width: 44,
+        height: 44,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    demoTitle: { fontSize: FontSize.md, fontWeight: FontWeight.bold },
+    demoSub: { fontSize: FontSize.xs, marginTop: 2 },
 });

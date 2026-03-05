@@ -36,52 +36,63 @@ export function projectReturn(amount: number, years: number = 1): number {
 export async function processTransaction(
     userId: string,
     amount: number,
-    description: string = ''
+    description: string = '',
+    txnDate?: Date,
+    txnType: 'debit' | 'credit' = 'debit'
 ): Promise<{ savedAmount: number; invested: boolean; error: string | null }> {
-    const savedAmount = calculateSavings(amount);
+    // Only calculate savings for DEBIT transactions
+    const savedAmount = txnType === 'debit' ? calculateSavings(amount) : 0;
 
     // 1. Insert transaction record
-    const { error: txError } = await supabase.from('transactions').insert({
+    const insertData: any = {
         user_id: userId,
         amount,
         saved_amount: savedAmount,
-        description,
-    });
+        description: `${txnType === 'credit' ? '[CR] ' : ''}${description}`,
+    };
+    // Use original SMS date if available
+    if (txnDate) {
+        insertData.created_at = txnDate.toISOString();
+    }
+    const { error: txError } = await supabase.from('transactions').insert(insertData);
 
     if (txError) {
         return { savedAmount: 0, invested: false, error: txError.message };
     }
 
-    // 2. Update profile totals
-    const { error: profileError } = await supabase.rpc('update_profile_totals', {
-        p_user_id: userId,
-        p_spent: amount,
-        p_saved: savedAmount,
-    });
+    // 2. Only update profile totals for DEBIT transactions
+    if (txnType === 'debit') {
+        const { error: profileError } = await supabase.rpc('update_profile_totals', {
+            p_user_id: userId,
+            p_spent: amount,
+            p_saved: savedAmount,
+        });
 
-    if (profileError) {
-        // Fallback: manual update
-        const { data: profile } = await supabase
-            .from('profiles')
-            .select('total_spent, total_saved')
-            .eq('id', userId)
-            .single();
-
-        if (profile) {
-            await supabase
+        if (profileError) {
+            // Fallback: manual update
+            const { data: profile } = await supabase
                 .from('profiles')
-                .update({
-                    total_spent: (profile.total_spent || 0) + amount,
-                    total_saved: (profile.total_saved || 0) + savedAmount,
-                })
-                .eq('id', userId);
+                .select('total_spent, total_saved')
+                .eq('id', userId)
+                .single();
+
+            if (profile) {
+                await supabase
+                    .from('profiles')
+                    .update({
+                        total_spent: (profile.total_spent || 0) + amount,
+                        total_saved: (profile.total_saved || 0) + savedAmount,
+                    })
+                    .eq('id', userId);
+            }
         }
+
+        // 3. Check for auto-investment (only for debits)
+        const invested = await checkAndInvest(userId);
+        return { savedAmount, invested, error: null };
     }
 
-    // 3. Check for auto-investment
-    const invested = await checkAndInvest(userId);
-
-    return { savedAmount, invested, error: null };
+    return { savedAmount: 0, invested: false, error: null };
 }
 
 // ─── Auto-Invest Logic ───
@@ -130,9 +141,37 @@ export async function getProfile(userId: string) {
     return { profile: data, error };
 }
 
+// ─── Clear all transactions (for re-scan with correct dates) ───
+
+export async function clearAllTransactions(userId: string) {
+    console.log(`[Clear] Deleting all transactions for user: ${userId}`);
+
+    const { error: delError, count } = await supabase
+        .from('transactions')
+        .delete({ count: 'exact' })
+        .eq('user_id', userId);
+
+    if (delError) {
+        console.error('[Clear] Delete failed:', delError.message);
+    } else {
+        console.log(`[Clear] Deleted ${count} transactions`);
+    }
+
+    const { error: profError } = await supabase.from('profiles').update({
+        total_spent: 0,
+        total_saved: 0,
+    }).eq('id', userId);
+
+    if (profError) {
+        console.error('[Clear] Profile reset failed:', profError.message);
+    } else {
+        console.log('[Clear] Profile totals reset to 0');
+    }
+}
+
 // ─── Fetch recent transactions ───
 
-export async function getRecentTransactions(userId: string, limit: number = 5) {
+export async function getRecentTransactions(userId: string, limit: number = 20) {
     const { data, error } = await supabase
         .from('transactions')
         .select('*')
