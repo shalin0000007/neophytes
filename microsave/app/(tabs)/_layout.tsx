@@ -148,10 +148,7 @@ const styles = StyleSheet.create({
         borderRadius: 30,
         justifyContent: 'center',
         alignItems: 'center',
-        shadowColor: '#8A4FFF',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.4,
-        shadowRadius: 8,
+        boxShadow: '0px 4px 8px rgba(138, 79, 255, 0.4)',
         elevation: 8,
     },
 });
