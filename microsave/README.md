@@ -1,50 +1,85 @@
-# Welcome to your Expo app 👋
+<div align="center">
+  <img src="assets/splash.gif" width="120" />
+  <h1>MicroSave 🦊</h1>
+  <p><b>Transform everyday spending into automated micro-investments using AI and SMS parsing.</b></p>
+</div>
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+---
 
-## Get started
+## 💡 The Problem
 
-1. Install dependencies
+Millions of students and young professionals struggle with saving money. It requires discipline, constant budget tracking, and manual transfers. When you're buying a ₹18 chai or a ₹140 Zomato order, saving feels impossible.
 
-   ```bash
-   npm install
-   ```
+## 🚀 The Solution: MicroSave
 
-2. Start the app
+MicroSave makes saving invisible. Every time you make a UPI payment, the app natively reads the bank SMS, rounds up your purchase to the nearest ₹10, and quietly funnels that spare change into a digital vault. 
 
-   ```bash
-   npx expo start
-   ```
+Once your vault hits ₹100, the money is automatically invested to generate returns. You don't have to lift a finger.
 
-In the output, you'll find options to open the app in a
+## ✨ Key Features
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+*   **🤖 Native SMS Parsing Engine**: Automatically detects bank debits on Android locally—no manual input required and no privacy concerns pulling banking APIs.
+*   **💸 Automated Round-Ups**: Bought coffee for ₹63? We round it to ₹70 and save ₹7 for you.
+*   **📈 Auto-Investments**: Once your spare change hits the ₹100 threshold, it’s automatically moved to an investment pool.
+*   **📊 AI-Powered Insights**: Beautiful charts breaking down your savings vs. expenses and predictive AI suggestions on how to maximize your savings.
+*   **🔔 Intelligent Push Notifications**: Get notified only on savings milestones and auto-investments.
+*   **🦊 Gamified Profiles**: Pick from 10 distinct animated avatars, level up as you save, and secure your app with biometrics.
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+## 🛠️ Tech Stack
 
-## Get a fresh project
+*   **Frontend**: React Native, Expo Router, Reanimated
+*   **Backend & DB**: Supabase (PostgreSQL), Row Level Security (RLS)
+*   **Native Modules**: Kotlin (Android `BroadcastReceiver` for real-time background SMS reading)
+*   **Storage**: `@react-native-async-storage` for offline preferences
 
-When you're ready, run:
+## 📱 Screenshots
 
+| Dashboard | Profile & Avatars | SMS Engine Log | AI Insights |
+|:---:|:---:|:---:|:---:|
+| *(Add screenshot here)* | *(Add screenshot here)* | *(Add screenshot here)* | *(Add screenshot here)* |
+
+## 🚀 Getting Started
+
+Since this app uses custom native Android code for SMS detection (`SmsReaderModule`), it **cannot** be run in Expo Go. It must be built natively.
+
+### Prerequisites
+*   Node.js (v18+)
+*   Android Studio / Android SDK
+*   Supabase Account (for backend)
+
+### 1. Clone & Install
 ```bash
-npm run reset-project
+git clone https://github.com/shalin0000007/neophytes.git
+cd neophytes/microsave
+npm install
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+### 2. Environment Variables
+Create a `.env` file in the root `microsave` directory:
+```env
+EXPO_PUBLIC_SUPABASE_URL=your_supabase_url
+EXPO_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
 
-## Learn more
+### 3. Database Setup
+Run the SQL script located in `execution/setup_supabase.sql` in your Supabase SQL Editor. This sets up the `profiles`, `transactions`, and `investments` tables with proper RLS policies.
 
-To learn more about developing your project with Expo, look at the following resources:
+### 4. Run Locally on Android Device
+Connect your Android phone via USB (with USB Debugging enabled).
+```bash
+# This will compile the Kotlin code and install the APK
+npx expo run:android
+```
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## 🧪 Testing the SMS Engine (Phase 5)
 
-## Join the community
+If you don't want to wait for a real bank SMS, you can use the built-in simulator on the Dashboard:
+1. Tap any of the **Phase 5 Testing Engine** buttons (e.g., Zomato, Amazon, Chai tapri).
+2. The app will inject a simulated debit SMS into the native parser.
+3. Watch your savings ring animate and fill up!
 
-Join our community of developers creating universal apps.
+## 🔐 Privacy by Design
+MicroSave never sends your raw SMS data to the cloud. SMS parsing happens **100% locally** on the Android device using standard Regex. Only the extracted amounts (spent/saved) are synced to your secure Supabase profile.
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+---
+*Built with ❤️ for the Hackathon*
