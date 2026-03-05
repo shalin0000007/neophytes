@@ -21,13 +21,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useAuth } from '@/src/services/AuthContext';
 import { getProfile, getRecentTransactions, processTransaction, clearAllTransactions } from '@/src/services/savingsEngine';
 import { simulateSms } from '@/src/services/smsParser';
 import { scanRecentSms, startSmsPolling, stopSmsPolling, resetProcessedIds } from '@/src/services/smsReader';
+import { getSavedAvatarId, getAvatarById } from '@/src/services/avatarService';
 import { FontSize, FontWeight, Spacing, BorderRadius, Shadows } from '@/src/theme';
 
 interface Transaction {
@@ -51,6 +52,7 @@ export default function DashboardScreen() {
     const [simLoading, setSimLoading] = useState(false);
     const [scanLoading, setScanLoading] = useState(false);
     const [lastSaved, setLastSaved] = useState<{ amount: number; merchant: string } | null>(null);
+    const [avatarId, setAvatarId] = useState('1');
 
     const fetchData = useCallback(async () => {
         if (!user) return;
@@ -67,6 +69,13 @@ export default function DashboardScreen() {
     }, [user]);
 
     useEffect(() => { fetchData(); }, [fetchData]);
+
+    // Reload avatar whenever this tab is focused
+    useFocusEffect(
+        useCallback(() => {
+            getSavedAvatarId().then(setAvatarId);
+        }, [])
+    );
 
     const onRefresh = async () => {
         setRefreshing(true);
@@ -179,11 +188,15 @@ export default function DashboardScreen() {
             >
                 {/* Header */}
                 <View style={styles.header}>
-                    <View style={[styles.avatar, { backgroundColor: '#DEB887' }]}>
-                        <Text style={styles.avatarEmoji}>👤</Text>
-                    </View>
+                    <TouchableOpacity
+                        style={[styles.avatar, { backgroundColor: getAvatarById(avatarId).bg }]}
+                        onPress={() => router.navigate('/(tabs)/profile')}
+                        activeOpacity={0.8}
+                    >
+                        <Text style={styles.avatarEmoji}>{getAvatarById(avatarId).emoji}</Text>
+                    </TouchableOpacity>
                     <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>Dashboard</Text>
-                    <TouchableOpacity>
+                    <TouchableOpacity onPress={() => router.push('/notifications' as any)}>
                         <Ionicons name="notifications-outline" size={24} color={colors.textPrimary} />
                     </TouchableOpacity>
                 </View>

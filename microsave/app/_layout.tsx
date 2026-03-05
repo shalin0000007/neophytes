@@ -1,17 +1,55 @@
 /**
  * Root Layout
  * 
- * Wraps the entire app with ThemeProvider and AuthProvider.
+ * Shows animated GIF splash screen on launch, then
+ * wraps the app with ThemeProvider and AuthProvider.
  * Redirects to auth screens or main tabs based on session state.
  */
 
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { View, Image, StyleSheet, Dimensions } from 'react-native';
 import 'react-native-reanimated';
 
 import { ThemeProvider, useTheme } from '@/src/theme/ThemeContext';
 import { AuthProvider, useAuth } from '@/src/services/AuthContext';
+
+const { width, height } = Dimensions.get('window');
+
+// ─── Splash Screen ──────────────────────────────────────────────────────────
+
+function AnimatedSplash({ onFinish }: { onFinish: () => void }) {
+  useEffect(() => {
+    const timer = setTimeout(onFinish, 4050); // Show for 4.05 seconds
+    return () => clearTimeout(timer);
+  }, []);
+
+  return (
+    <View style={splashStyles.container}>
+      <Image
+        source={require('../assets/splash.gif')}
+        style={splashStyles.gif}
+        resizeMode="cover"
+      />
+    </View>
+  );
+}
+
+const splashStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#0D0B1A',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  gif: {
+    width: width,
+    height: height,
+  },
+});
+
+// ─── Navigation Guard ───────────────────────────────────────────────────────
 
 function RootLayoutNav() {
   const { session, initialized } = useAuth();
@@ -25,10 +63,8 @@ function RootLayoutNav() {
     const inAuthGroup = segments[0] === 'auth';
 
     if (!session && !inAuthGroup) {
-      // Not logged in → go to login
       router.replace('/auth/login');
     } else if (session && inAuthGroup) {
-      // Logged in but on auth screen → go to home
       router.replace('/(tabs)');
     }
   }, [session, initialized, segments]);
@@ -43,7 +79,15 @@ function RootLayoutNav() {
   );
 }
 
+// ─── Root Layout ────────────────────────────────────────────────────────────
+
 export default function RootLayout() {
+  const [showSplash, setShowSplash] = useState(true);
+
+  if (showSplash) {
+    return <AnimatedSplash onFinish={() => setShowSplash(false)} />;
+  }
+
   return (
     <ThemeProvider>
       <AuthProvider>
